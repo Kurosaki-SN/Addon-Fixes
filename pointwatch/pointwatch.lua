@@ -39,7 +39,7 @@ _addon.author = 'Byrth'
 _addon.version = 0.240420
 _addon.command = 'pw'
 
-settings = config.load('data\\settings.xml',default_settings)
+settings = config.load('data\\settings.xml', default_settings, 'global')
 config.register(settings,initialize)
 
 box = texts.new('${current_string}',settings.text_box_settings,settings)
@@ -205,7 +205,7 @@ windower.register_event('addon command',function(...)
         end
         texts[first_cmd](box,unpack(tab))
         settings.text_box_settings = box.settings()
-        config.save(settings)
+        config.save(settings, 'global')
     elseif first_cmd == 'reload' then
         windower.send_command('lua r pointwatch')
     elseif first_cmd == 'unload' then
