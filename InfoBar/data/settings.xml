@@ -50,8 +50,8 @@
         <TargetPC>${name}</TargetPC>
         <display>
             <pos>
-                <x>988</x>
-                <y>142</y>
+                <x>1022</x>
+                <y>143</y>
             </pos>
             <text>
                 <blue>128</blue>
