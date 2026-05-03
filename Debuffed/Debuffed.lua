@@ -6,6 +6,7 @@ require('luau')
 packets = require('packets')
 texts = require('texts')
 images = require('images') -- Added images library
+res = require('resources')
 
 defaults = {}
 -- ... (keep all the defaults) ...
@@ -40,8 +41,11 @@ erase_abilities = S{2370, 2571, 2714, 2718, 2775, 2831}
 partial_erase_abilities = S{1245, 1273}
 
 debuffs = {
-	[2] = S{98,253,259,273,274,576,584,598,678}, --Sleep I & II
-	[3] = S{220,221,225,350,351,513,716}, --Poison
+	[2] = S{253,584,678}, --Sleep I
+	[650] = S{273}, --Sleepga I
+	[651] = S{274,576,598}, --Sleepga II
+	[3] = S{220,225,350,351,513,716}, --Poison I, Poisonga, and others
+	[652] = S{221,226}, --Poison II & Poisonga II
 	[4] = S{58,80,341,644,704}, --Paralyze
 	[5] = S{254,276,347,348,621}, --Blind
 	[6] = S{59,582,687,727}, --Silence
@@ -50,7 +54,7 @@ debuffs = {
 	[11] = S{258,531}, --Bind
 	[12] = S{216,217,708}, --Gravity
 	[13] = S{56,79,344,345,548,703}, --Slow
-	[19] = S{98,259,274,576,598}, --sleep ii
+	[19] = S{98,259,274,576,598}, --sleep II | Repose
 	[21] = S{286,884}, ----addle
 	[28] = S{575,720,738,746}, --terror
 	[31] = S{588,682}, --plague
@@ -60,10 +64,10 @@ debuffs = {
 	[131] = S{238}, --rasp
 	[132] = S{239}, --shock
 	[133] = S{240,705}, --drown
-	[136] = S{606}, --str down
-	[138] = S{537}, --vit down
-	[140] = S{572}, -- int down
-	[146] = S{524,699}, --accuracy down
+	--[136] = S{606}, --str down
+	--[138] = S{537}, --vit down
+	--[140] = S{572}, -- int down
+	[146] = S{242,524,699}, --Accuracy Down & Absorb ACC
 	[147] = S{319,651,659,726}, --attack down
 	[148] = S{610,841,842,882}, --Evasion Down
 	[149] = S{561,633,651,717,728}, -- defense down
@@ -71,28 +75,45 @@ debuffs = {
 	[167] = S{633,656}, --Magic Def. Down
 	[168] = S{508}, --inhibit TP
 	[192] = S{368,369,370,371,372,373,374,375}, --requiem
-	[193] = S{376,463}, --lullaby
+	[193] = S{463,471}, --Foe Lullaby
+	[640] = S{376,377}, --Horde Lullaby
 	[194] = S{421,422,423}, --elegy
-	[217] = S{454,455,456,457,458,459,460,461,871,872,873,874,875,876,877,878}, --threnodies
+	[641] = S{454,871}, --Fire Threnody
+	[642] = S{455,872}, --Ice Threnody
+	[643] = S{456,873}, --Wind Threnody
+	[644] = S{457,874}, --Earth Threnody
+	[645] = S{458,875}, --Lightning Threnody
+	[646] = S{459,876}, --Water Threnody
+	[647] = S{460,877}, --Light Threnody
+	[648] = S{461,878}, --Dark Threnody
 	[223] = S{472}, --nocturne
-	[242] = 242, --Absorb ACC
-	[266] = 266, --Absorb STR
-	[267] = 267, --Absorb DEX
-	[268] = 268, --Absorb VIT
-	[269] = 269, --Absorb AGI
-	[270] = 270, --Absorb INT
-	[271] = 271, --Absorb MND
-	[272] = 272, --Absorb CHR
+	--[242] = S{242}, --Absorb ACC
+	[136] = S{266,606}, --STR Down & Absorb STR
+	[137] = S{267}, --DEX Down & Absorb DEX
+	[138] = S{268,537}, --VIT Down & Absorb VIT
+	[139] = S{269}, --AGI Down & Absorb AGI
+	[140] = S{270,572}, --INT Down & Absorb INT
+	[141] = S{271}, --MND Down & Absorb MND
+	[142] = S{272}, --CHR Down & Absorb CHR
 	[404] = S{843,844,883}, --Magic Evasion Down
 	[597] = S{879}, --inundation
+	[134] = S{23,33}, --Dia I & Diaga
+	[655] = S{24}, --Dia II
+	[656] = S{25}, --Dia III
+    [135] = S{230}, --Bio I
+	[653] = S{231}, --Bio II
+	[654] = S{232}, --Bio III
 
 }
 
 hierarchy = {
-    [134] = S{33,34,35,36,37,230,231,232}, -- Dia I, II, III and Diagas
-	[134] = 60, -- Dia (Base duration, the script will update based on the spell cast)
-    [135] = S{38,39,40,41,42,230,231,232}, -- Bio I, II, III and Biagas
-	[135] = 60, -- Bio base duration
+    [23] = 1,  --Dia
+    [24] = 4,  --Dia II
+    [25] = 6,  --Dia III
+    [33] = 2,  --Diaga
+    [230] = 3, --Bio
+    [231] = 5, --Bio II
+    [232] = 7, --Bio III
 }
 
 function apply_dot(target, spell)
@@ -101,7 +122,7 @@ function apply_dot(target, spell)
 	end
 
 	local priority = 0
-	local current = debuffed_mobs[target][134] or debuffed_mobs[target][135]
+	local current = debuffed_mobs[target][134] or debuffed_mobs[target][655] or debuffed_mobs[target][656] or debuffed_mobs[target][135] or debuffed_mobs[target][653] or debuffed_mobs[target][654]
 	if current then
 		priority = hierarchy[current.name] or hierarchy[current]
 	end
@@ -111,24 +132,32 @@ function apply_dot(target, spell)
 
 	if hierarchy[spell] > priority then
 		if T{23,24,25,33}:contains(spell) then
+			debuffed_mobs[target][134] = nil
+			debuffed_mobs[target][655] = nil
+			debuffed_mobs[target][656] = nil
 			if spell == 23 then
 				debuffed_mobs[target][134] = {name = spell, timer = os.clock() + 60 + addTime}
 			elseif spell == 33 then
 				debuffed_mobs[target][134] = {name = spell, timer = os.clock() + 60 + addTime}
 			elseif spell == 24 then
-				debuffed_mobs[target][134] = {name = spell, timer = os.clock() + 120 + addTime}
+				debuffed_mobs[target][655] = {name = spell, timer = os.clock() + 120 + addTime}
 			else
-				debuffed_mobs[target][134] = {name = spell, timer = os.clock() + 180 + addTime}
+				debuffed_mobs[target][656] = {name = spell, timer = os.clock() + 180 + addTime}
 			end
 			debuffed_mobs[target][135] = nil
+			debuffed_mobs[target][653] = nil
+			debuffed_mobs[target][654] = nil
 		elseif T{230,231,232}:contains(spell) then
 			debuffed_mobs[target][134] = nil
+			debuffed_mobs[target][135] = nil
+			debuffed_mobs[target][653] = nil
+			debuffed_mobs[target][654] = nil
 			if spell == 230 then
 				debuffed_mobs[target][135] = {name = spell, timer = os.clock() + 60}
 			elseif spell == 231 then
-				debuffed_mobs[target][135] = {name = spell, timer = os.clock() + 120}
+				debuffed_mobs[target][653] = {name = spell, timer = os.clock() + 120}
 			else
-				debuffed_mobs[target][135] = {name = spell, timer = os.clock() + 180}
+				debuffed_mobs[target][654] = {name = spell, timer = os.clock() + 180}
 			end
 		end
 	end
@@ -307,12 +336,37 @@ function inc_action(act)
 					apply_helix(act.targets[i].id, act.param)
 				elseif ja_spells:contains(act.param) then
 					apply_ja_spells(act.targets[i].id, act.param)
-				end
+				elseif T{242,266,267,268,269,270,271,272}:contains(act.param) then
+					-- PRIVATE SERVER CATCH-ALL FOR ABSORB SPELLS
+					local effect = act.param
+					if effect == 242 then effect = 146	
+					elseif effect == 266 then effect = 136
+					elseif effect == 267 then effect = 137
+					elseif effect == 268 then effect = 138
+					elseif effect == 269 then effect = 139
+					elseif effect == 270 then effect = 140
+					elseif effect == 271 then effect = 141
+					elseif effect == 272 then effect = 142
+					end
+					if not debuffed_mobs[act.targets[i].id] then debuffed_mobs[act.targets[i].id] = {} end
+					debuffed_mobs[act.targets[i].id][effect] = {name = act.param, timer = os.clock() + 90}
+				end	
 			elseif T{236,237,266,267,268,269,270,271,272,277,278,279,280}:contains(act.targets[i].actions[1].message) then
 				local effect = act.targets[i].actions[1].param
 				local target = act.targets[i].id
 				local spell = act.param
 				local duration
+				
+				-- ABSOLUTE OVERRIDE FOR ABSORB SPELLS
+				if spell == 242 then effect = 146
+				elseif spell == 266 then effect = 136
+				elseif spell == 267 then effect = 137
+				elseif spell == 268 then effect = 138
+				elseif spell == 269 then effect = 139
+				elseif spell == 270 then effect = 140
+				elseif spell == 271 then effect = 141
+				elseif spell == 272 then effect = 142
+				end
 				
 				if not debuffed_mobs[target] then
 					debuffed_mobs[target] = {}
@@ -337,7 +391,7 @@ function inc_action(act)
 					duration = os.clock() + 72
 				elseif T{368}:contains(spell) then
 					duration = os.clock() + 75
-				elseif T{98,220,259,274,548,576,598,871,872,873,874,875,876,877,878}:contains(spell) then -- 1 min 30 secs spells durations
+				elseif T{98,220,242,259,266,267,268,269,270,271,272,274,548,576,598,871,872,873,874,875,876,877,878}:contains(spell) then -- 1 min 30 secs spells durations & Absorbs
 					duration = os.clock() + 90
 				--elseif T{98,259,274,576,598}:contains(spell) then -- sleep II level spells overwrite sleep I and lullaby, dsp/topaz is using incorrect statuses for them
 					--duration = os.clock() + 90
@@ -386,7 +440,7 @@ function inc_action(act)
 					if debuffed_mobs[target] and debuffed_mobs[target][133] then
 						debuffed_mobs[target][133] = nil
 					end
-				elseif T{58,59,80,216,217,221,319,341,344,351,374,375,621,644,656,704,708,717,841,843}:contains(spell) then -- 2 min spells durations
+				elseif T{58,59,80,216,217,221,226,319,341,344,351,374,375,621,644,656,704,708,717,841,843}:contains(spell) then -- 2 min spells durations
 					duration = os.clock() + 120
 				elseif T{882,883}:contains(spell) then -- 2 min 10 secs spells durations
 					duration = os.clock() + 130
@@ -423,27 +477,70 @@ function inc_action(act)
 					debuffed_mobs[target] = {}
 				end
 
-				if debuffs[effect] and debuffs[effect]:contains(spell) then
-					if effect == 19 or effect == 193 then -- workaround for topaz handling of higher level sleeps
-						effect = 2
+				-- CUSTOM ICON ROUTER
+				if effect == 3 and T{221,226}:contains(spell) then
+					effect = 652 -- Reroutes Poison II & Poisonga II
+					if debuffed_mobs[target] then debuffed_mobs[target][3] = nil end -- Clears Poison I
+				elseif effect == 2 then
+					if T{273}:contains(spell) then
+						effect = 650 -- Reroutes Sleepga I
+					elseif T{274,576,598}:contains(spell) then
+						effect = 651 -- Reroutes Sleepga II
+					elseif T{98,259}:contains(spell) then
+						effect = 19 -- Reroutes Sleep II and Repose
 					end
-					debuffed_mobs[target][effect] = {name = spell, timer = duration}
+					-- Clears weaker sleep icons if overwritten
+					if effect == 19 or effect == 650 or effect == 651 then
+						if debuffed_mobs[target] then 
+							debuffed_mobs[target][2] = nil 
+							if effect == 651 or effect == 19 then debuffed_mobs[target][650] = nil end
+						end
+					end
+				elseif T{376,377}:contains(spell) then
+					effect = 640 -- Reroutes Horde Lullaby
+				elseif T{463,471}:contains(spell) then
+					effect = 193 -- Reroutes Foe Lullaby
+				elseif effect == 217 then
+					if T{454,871}:contains(spell) then effect = 641
+					elseif T{455,872}:contains(spell) then effect = 642
+					elseif T{456,873}:contains(spell) then effect = 643
+					elseif T{457,874}:contains(spell) then effect = 644
+					elseif T{458,875}:contains(spell) then effect = 645
+					elseif T{459,876}:contains(spell) then effect = 646
+					elseif T{460,877}:contains(spell) then effect = 647
+					elseif T{461,878}:contains(spell) then effect = 648
+					end
 				end
-			elseif T{329,330,331,332,333,334,335,533}:contains(act.targets[i].actions[1].message) then
+
+				if debuffs[effect] and debuffs[effect]:contains(spell) then
+					debuffed_mobs[target][effect] = {name = spell, timer = duration}
+				end	
+			elseif T{242,329,330,331,332,333,334,335,533}:contains(act.targets[i].actions[1].message) then
 				local effect = act.param
 				local target = act.targets[i].id
 				local spell = act.param
 				local duration = os.clock() + 215
 
+				-- ROUTES ABSORB SPELLS FROM DRAIN MESSAGES
+				if spell == 242 then effect = 146; duration = os.clock() + 90
+				elseif spell == 266 then effect = 136; duration = os.clock() + 90
+				elseif spell == 267 then effect = 137; duration = os.clock() + 90
+				elseif spell == 268 then effect = 138; duration = os.clock() + 90
+				elseif spell == 269 then effect = 139; duration = os.clock() + 90
+				elseif spell == 270 then effect = 140; duration = os.clock() + 90
+				elseif spell == 271 then effect = 141; duration = os.clock() + 90
+				elseif spell == 272 then effect = 142; duration = os.clock() + 90
+				end
+
 				if not debuffed_mobs[target] then
 					debuffed_mobs[target] = {}
 				end
 
-				if debuffs[effect] and tostring(debuffs[effect]):contains(spell) then
+				if debuffs[effect] then
 					debuffed_mobs[target][effect] = {name = spell, timer = duration}
 				end
 			end
-		end
+		end	
 	elseif act.category == 11 then
 		for i, v in pairs(act.targets) do
 			if T{101}:contains(act.targets[i].actions[1].message) then
@@ -479,20 +576,95 @@ function inc_action(act)
 				debuffed_mobs[target][effect] = {name = res.job_abilities[effect].en.." lv."..tier, timer = step_duration[effect]}
 			end  
 		end
-	elseif act.category == 1 and debuffed_mobs[act.actor] then
-		if debuffed_mobs[act.actor][2] then
-			debuffed_mobs[act.actor][2] = nil
-		elseif debuffed_mobs[act.actor][7] then
-			debuffed_mobs[act.actor][7] = nil
-		elseif debuffed_mobs[act.actor][28] then
-			debuffed_mobs[act.actor][28] = nil
+	elseif act.category == 1 then
+		for i, v in pairs(act.targets) do
+			local target = v.id
+			
+			for j, action_data in pairs(v.actions) do
+				local msg1 = action_data.message or 0
+				local msg2 = action_data.add_effect_message or 0
+				local param = action_data.add_effect_param or 0 -- This grabs the exact debuff ID!
+
+				-- RELIC HUNTER DEBUG (Now showing the Param too)
+				if msg2 > 0 then
+					--windower.add_to_chat(200, 'RELIC HUNTER -> Msg: '..tostring(msg2)..' | Param: '..tostring(param))
+				end
+
+				local msg = 0
+				if T{161,162,163,164,165,168,169,171}:contains(msg1) then 
+					msg = msg1 
+				elseif T{161,162,163,164,165,168,169,171}:contains(msg2) then 
+					msg = msg2 
+				end
+
+				if msg > 0 then
+					local effect = 0
+					local duration = 30
+					
+					-- The Universal Private Server Catch
+					if msg == 164 then
+						effect = param
+						-- Guttler (130) and Gungnir (149) get 60 seconds
+						if effect == 130 or effect == 149 then duration = 60 end
+					
+					-- Fallback for standard Retail IDs just in case
+					elseif msg == 161 then effect = 3 
+					elseif msg == 162 then effect = 5 
+					elseif msg == 163 then effect = 4 
+					elseif msg == 165 then effect = 130; duration = 60 
+					elseif msg == 168 then effect = 149; duration = 60 
+					elseif msg == 169 then effect = 148 
+					elseif msg == 171 then effect = 147 
+					end
+
+					if effect > 0 then
+						if not debuffed_mobs[target] then debuffed_mobs[target] = {} end
+						debuffed_mobs[target][effect] = {name = "Additional Effect", timer = os.clock() + duration}
+					end
+				end
+			end
+
+			-- CLEAR DEBUFFS: Wake Up Logic
+			if debuffed_mobs[target] then
+				if debuffed_mobs[target][2] or debuffed_mobs[target][19] or debuffed_mobs[target][193] or debuffed_mobs[target][640] or debuffed_mobs[target][650] or debuffed_mobs[target][651] then
+					debuffed_mobs[target][2] = nil
+					debuffed_mobs[target][19] = nil
+					debuffed_mobs[target][193] = nil
+					debuffed_mobs[target][640] = nil
+					debuffed_mobs[target][650] = nil
+					debuffed_mobs[target][651] = nil
+				elseif debuffed_mobs[target][7] then
+					debuffed_mobs[target][7] = nil
+				elseif debuffed_mobs[target][28] then
+					debuffed_mobs[target][28] = nil
+				end
+			end
 		end
 	end
-end
+end	
 
 function inc_action_message(arr)
 	if T{6,20,113,406,605,646}:contains(arr.message_id) then
 		debuffed_mobs[arr.target_id] = nil
+	elseif T{161,162,163,165,168,169,171}:contains(arr.message_id) then
+		local target = arr.target_id
+		local msg = arr.message_id
+		local effect = 0
+		local duration = 30
+		
+		if msg == 161 then effect = 3 -- Poison (Mandau)
+		elseif msg == 162 then effect = 5 -- Blind (Apocalypse)
+		elseif msg == 163 then effect = 4 -- Paralyze (Kikoku)
+		elseif msg == 165 then effect = 130; duration = 60 -- Choke (Guttler)
+		elseif msg == 168 then effect = 149; duration = 60 -- Defense Down (Gungnir)
+		elseif msg == 169 then effect = 148 -- Evasion Down (Bravura)
+		elseif msg == 171 then effect = 147 -- Attack Down (Amanomurakumo)
+		end
+
+		if effect > 0 then
+			if not debuffed_mobs[target] then debuffed_mobs[target] = {} end
+			debuffed_mobs[target][effect] = {name = "Additional Effect", timer = os.clock() + duration}
+		end
 	elseif T{204,206}:contains(arr.message_id) then
 		if debuffed_mobs[arr.target_id] then
 			if arr.message_id == 206 then
@@ -532,6 +704,34 @@ function inc_action_message(arr)
 				elseif T{448,449,450,451,452}:contains(arr.param_1) then
 					debuffed_mobs[arr.target_id][312] = nil
 					step_duration[312] = 0
+				elseif arr.param_1 == 3 then
+					debuffed_mobs[arr.target_id][3] = nil
+					debuffed_mobs[arr.target_id][652] = nil
+				elseif arr.param_1 == 134 then
+					debuffed_mobs[arr.target_id][134] = nil
+					debuffed_mobs[arr.target_id][655] = nil
+					debuffed_mobs[arr.target_id][656] = nil
+				elseif arr.param_1 == 135 then
+					debuffed_mobs[arr.target_id][135] = nil
+					debuffed_mobs[arr.target_id][653] = nil
+					debuffed_mobs[arr.target_id][654] = nil
+				elseif arr.param_1 == 193 or arr.param_1 == 2 or arr.param_1 == 19 then
+                    debuffed_mobs[arr.target_id][2] = nil
+                    debuffed_mobs[arr.target_id][19] = nil
+                    debuffed_mobs[arr.target_id][193] = nil
+                    debuffed_mobs[arr.target_id][640] = nil
+                    debuffed_mobs[arr.target_id][650] = nil
+                    debuffed_mobs[arr.target_id][651] = nil
+				elseif arr.param_1 == 217 then
+			        debuffed_mobs[arr.target_id][arr.param_1] = nil
+			        debuffed_mobs[arr.target_id][641] = nil
+			        debuffed_mobs[arr.target_id][642] = nil
+			        debuffed_mobs[arr.target_id][643] = nil
+			        debuffed_mobs[arr.target_id][644] = nil
+			        debuffed_mobs[arr.target_id][645] = nil
+			        debuffed_mobs[arr.target_id][646] = nil
+			        debuffed_mobs[arr.target_id][647] = nil
+			        debuffed_mobs[arr.target_id][648] = nil
 				else
 					debuffed_mobs[arr.target_id][arr.param_1] = nil
 				end
@@ -550,10 +750,12 @@ windower.register_event('incoming chunk', function(id, data)
 	if id == 0x028 then
 		inc_action(windower.packets.parse_action(data))
 	elseif id == 0x029 then
+		-- This uses Windower's library to perfectly read your server's data
+		local packet = packets.parse('incoming', data)
 		local arr = {}
-		arr.target_id = data:unpack('I',0x09)
-		arr.param_1 = data:unpack('I',0x0D)
-		arr.message_id = data:unpack('H',0x19)%32768
+		arr.target_id = packet['Target']
+		arr.param_1 = packet['Param 1']
+		arr.message_id = packet['Message']
 		
 		inc_action_message(arr)
 	end
