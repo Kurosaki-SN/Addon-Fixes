@@ -323,6 +323,35 @@ function update_box()
 end
 
 function inc_action(act)
+
+    -- ==================================================
+	-- WIDE NET HUNTER: Catches Angon!
+	-- ==================================================
+	-- if act.category ~= 1 then -- Ignores normal melee swings
+		-- if act.targets[1] and act.targets[1].actions[1] then
+			-- local act_id = act.param
+			-- local msg = act.targets[1].actions[1].message
+			-- local param = act.targets[1].actions[1].param
+			
+			-- windower.add_to_chat(200, 'WIDE HUNTER -> Cat: '..tostring(act.category)..' | ID: '..tostring(act_id)..' | Msg: '..tostring(msg)..' | Param: '..tostring(param))
+		-- end
+	-- end
+	-- ==================================================
+	
+	-- ==================================================
+	-- JA HUNTER:
+	-- ==================================================
+	-- if act.category == 6 or act.category == 14 then
+		-- if act.targets[1] and act.targets[1].actions[1] then
+			-- local ja_id = act.param
+			-- local msg = act.targets[1].actions[1].message
+			-- local param = act.targets[1].actions[1].param
+			
+			-- windower.add_to_chat(200, 'JA HUNTER -> Cat: '..tostring(act.category)..' | JA ID: '..tostring(ja_id)..' | Msg: '..tostring(msg)..' | Param: '..tostring(param))
+		-- end
+	-- end
+	-- ==================================================
+
 	if act.category == 4 then
 	
 		local addTime = 0
@@ -481,25 +510,28 @@ function inc_action(act)
 				if effect == 3 and T{221,226}:contains(spell) then
 					effect = 652 -- Reroutes Poison II & Poisonga II
 					if debuffed_mobs[target] then debuffed_mobs[target][3] = nil end -- Clears Poison I
-				elseif effect == 2 then
+				
+				-- Groups Sleep AND Lullaby together to bypass private server bugs
+				elseif effect == 2 or T{376,377,463,471}:contains(spell) then
 					if T{273}:contains(spell) then
 						effect = 650 -- Reroutes Sleepga I
 					elseif T{274,576,598}:contains(spell) then
 						effect = 651 -- Reroutes Sleepga II
 					elseif T{98,259}:contains(spell) then
 						effect = 19 -- Reroutes Sleep II and Repose
+					elseif T{376,377}:contains(spell) then
+						effect = 640 -- Reroutes Horde Lullaby
+					elseif T{463,471}:contains(spell) then
+						effect = 193 -- Reroutes Foe Lullaby
 					end
-					-- Clears weaker sleep icons if overwritten
-					if effect == 19 or effect == 650 or effect == 651 then
+					
+					-- Clears weaker sleep icons if overwritten by stronger ones
+					if effect == 19 or effect == 650 or effect == 651 or effect == 640 or effect == 193 then
 						if debuffed_mobs[target] then 
 							debuffed_mobs[target][2] = nil 
 							if effect == 651 or effect == 19 then debuffed_mobs[target][650] = nil end
 						end
 					end
-				elseif T{376,377}:contains(spell) then
-					effect = 640 -- Reroutes Horde Lullaby
-				elseif T{463,471}:contains(spell) then
-					effect = 193 -- Reroutes Foe Lullaby
 				elseif effect == 217 then
 					if T{454,871}:contains(spell) then effect = 641
 					elseif T{455,872}:contains(spell) then effect = 642
@@ -554,12 +586,119 @@ function inc_action(act)
 				end
 			end
 		end
+		
+	-- ==================================================
+	-- CATEGORY 3: Weaponskills & Special Projectiles (Angon)
+	-- ==================================================
+	elseif act.category == 3 then
+		for i, v in pairs(act.targets) do
+			if act.targets[i].actions[1].message == 127 then
+				local target = act.targets[i].id
+				local effect = act.targets[i].actions[1].param
+				
+				if effect > 0 then
+					local duration = os.clock() + 90 
+					local ability_name = "Additional Effect"
+					
+					if act.param == 170 then
+						effect = 170 
+						ability_name = "Angon"
+					end
+					
+					if not debuffed_mobs[target] then debuffed_mobs[target] = {} end
+					debuffed_mobs[target][effect] = {name = ability_name, timer = duration}
+				end
+			end
+		end
+		
+	-- ==================================================
+	-- CATEGORY 6: Corsair Quick Draw & Pet Magic (Avatars)
+	-- ==================================================
+	elseif act.category == 6 then
+		for i, v in pairs(act.targets) do
+			local target = act.targets[i].id
+			local msg = act.targets[i].actions[1].message
+			local spell = act.param
+			
+			-- Handle Standard Corsair / Mob Debuffs (Message 127)
+			if msg == 127 then
+				local effect = act.targets[i].actions[1].param
+				if effect > 0 then
+					local duration = os.clock() + 60 
+					local name_prefix = res.job_abilities[act.param] and res.job_abilities[act.param].en or "Quick Draw"
+					if not debuffed_mobs[target] then debuffed_mobs[target] = {} end
+					debuffed_mobs[target][effect] = {name = name_prefix, timer = os.clock() + duration}
+				end
+			
+			-- Handle Avatar Magic (Message 0 / Generic)
+			elseif msg == 0 or T{2,227,230,236,237,266,267,268,277,278,280}:contains(msg) then
+				if not debuffed_mobs[target] then debuffed_mobs[target] = {} end
+				
+				if spell == 611 then -- Shiva: Sleepga
+					debuffed_mobs[target][650] = {name = "Sleepga", timer = os.clock() + 60}
+				elseif spell == 580 then -- Leviathan: Slowga
+					debuffed_mobs[target][13] = {name = "Slowga", timer = os.clock() + 180}
+				elseif spell == 657 then -- Diabolos: Somnolence (Weight)
+					debuffed_mobs[target][12] = {name = "Somnolence", timer = os.clock() + 180}
+				end
+			end
+		end
+
+	-- ==================================================
+	-- CATEGORY 13: Avatar Physical Pacts
+	-- ==================================================
+	elseif act.category == 13 then
+		for i, v in pairs(act.targets) do
+			local msg = act.targets[i].actions[1].message
+			local effect = act.targets[i].actions[1].param
+			local target = act.targets[i].id
+			
+			-- 1. Universal Catch (Msg 242 = Lands, Msg 266 = Falls Asleep)
+			if T{242, 266}:contains(msg) and effect > 0 then
+				if not debuffed_mobs[target] then debuffed_mobs[target] = {} end
+				
+				local duration = 120
+				local ability_name = "Blood Pact"
+				
+				if act.param == 658 then
+					ability_name = "Nightmare"
+					duration = 60 
+				end
+				
+				debuffed_mobs[target][effect] = {name = ability_name, timer = os.clock() + duration}
+			
+			-- 2. Multi-Debuff Catch (Lunar Cry)
+			elseif msg == 144 then
+				if not debuffed_mobs[target] then debuffed_mobs[target] = {} end
+				debuffed_mobs[target][146] = {name = "Lunar Cry", timer = os.clock() + 180}
+				debuffed_mobs[target][148] = {name = "Lunar Cry", timer = os.clock() + 180}
+				
+			-- 3. SILENT PROC CATCH (Crescent Fang)
+			-- ID 529 is Crescent Fang. Msg 317 is physical damage.
+			elseif act.param == 529 and msg == 317 then
+				if not debuffed_mobs[target] then debuffed_mobs[target] = {} end
+				-- Forces the UI to draw icon 4.png (Paralyze) for 60 seconds
+				debuffed_mobs[target][4] = {name = "Crescent Fang", timer = os.clock() + 60}
+			end
+		end
+
+	-- ==================================================
+	-- CATEGORY 14: Job Abilities & Steps
+	-- ==================================================
 	elseif act.category == 14 then
 		for i, v in pairs(act.targets) do
 			if T{519,520,521,591}:contains(act.targets[i].actions[1].message) then
 				local effect = act.param
 				local target = act.targets[i].id
 				local tier = act.targets[i].actions[1].param
+				local name_prefix = res.job_abilities[effect].en
+				
+				-- FIX: Reroutes JA IDs to actual Daze Status IDs to prevent Bard Buff collision
+				if effect == 201 then effect = 386 -- Quickstep -> Lethargic Daze
+				elseif effect == 202 then effect = 391 -- Box Step -> Sluggish Daze
+				elseif effect == 203 then effect = 396 -- Stutter Step -> Weakened Daze
+				elseif effect == 312 then effect = 448 -- Feather Step -> Dazed
+				end
 				
 				if tier == 1 then
 					step_duration[effect] = os.clock() + 60
@@ -573,7 +712,28 @@ function inc_action(act)
 					debuffed_mobs[target] = {}
 				end
 				
-				debuffed_mobs[target][effect] = {name = res.job_abilities[effect].en.." lv."..tier, timer = step_duration[effect]}
+				debuffed_mobs[target][effect] = {name = name_prefix.." lv."..tier, timer = step_duration[effect]}
+			
+			-- ==================================================
+			-- SKILLCHAIN WINDOW CATCH (Konzen-ittai & Wild Flourish)
+			-- ==================================================
+			elseif act.targets[i].actions[1].message == 529 then
+				local target = act.targets[i].id
+				local effect = 430 -- Reroutes both to 430.png
+				local duration = os.clock() + 60 -- Default to 60s for Konzen-ittai
+				local ability_name = "Konzen-ittai"
+				
+				-- If the ability was Wild Flourish (JA ID 209), overwrite the timer and name
+				if act.param == 209 then
+					duration = os.clock() + 7
+					ability_name = "Wild Flourish"
+				end
+				
+				if not debuffed_mobs[target] then
+					debuffed_mobs[target] = {}
+				end
+				
+				debuffed_mobs[target][effect] = {name = ability_name, timer = duration}
 			end  
 		end
 	elseif act.category == 1 then
@@ -693,17 +853,17 @@ function inc_action_message(arr)
 					debuffed_mobs[arr.target_id][arr.param_1] = nil
 					debuffed_mobs[arr.target_id][242] = nil
 				elseif T{386,387,388,389,390}:contains(arr.param_1) then
-					debuffed_mobs[arr.target_id][201] = nil
-					step_duration[201] = 0
+					debuffed_mobs[arr.target_id][386] = nil
+					step_duration[386] = 0
 				elseif T{391,392,393,394,395}:contains(arr.param_1) then
-					debuffed_mobs[arr.target_id][202] = nil
-					step_duration[202] = 0
+					debuffed_mobs[arr.target_id][391] = nil
+					step_duration[391] = 0
 				elseif T{396,397,398,399,400}:contains(arr.param_1) then
-					debuffed_mobs[arr.target_id][203] = nil
-					step_duration[203] = 0
+					debuffed_mobs[arr.target_id][396] = nil
+					step_duration[396] = 0
 				elseif T{448,449,450,451,452}:contains(arr.param_1) then
-					debuffed_mobs[arr.target_id][312] = nil
-					step_duration[312] = 0
+					debuffed_mobs[arr.target_id][448] = nil
+					step_duration[448] = 0
 				elseif arr.param_1 == 3 then
 					debuffed_mobs[arr.target_id][3] = nil
 					debuffed_mobs[arr.target_id][652] = nil
@@ -732,6 +892,11 @@ function inc_action_message(arr)
 			        debuffed_mobs[arr.target_id][646] = nil
 			        debuffed_mobs[arr.target_id][647] = nil
 			        debuffed_mobs[arr.target_id][648] = nil
+			        
+			    -- ANGON / DEFENSE DOWN CLEAR LOGIC
+				elseif arr.param_1 == 149 then
+					debuffed_mobs[arr.target_id][149] = nil
+					debuffed_mobs[arr.target_id][170] = nil
 				else
 					debuffed_mobs[arr.target_id][arr.param_1] = nil
 				end
