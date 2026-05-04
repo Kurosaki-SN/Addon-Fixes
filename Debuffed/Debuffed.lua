@@ -1,6 +1,8 @@
 _addon.name = 'Debuffed'
 _addon.author = 'original: Auk, improvements and additions: Kenshi'
 _addon.version = '1.5'
+_addon.commands = {'debuffed'}
+
 
 require('luau')
 packets = require('packets')
@@ -11,14 +13,14 @@ res = require('resources')
 defaults = {}
 -- ... (keep all the defaults) ...
 
--- STOPS PROFILE CREATION: This disables the auto-save feature, 
--- forcing the addon to strictly read your <global> settings and never write new ones.
-config.save = function() end 
-
 settings = config.load(defaults)
 
 base_pos_x = settings.pos.x
 base_pos_y = settings.pos.y
+
+local is_setup_mode = false
+local dummy_images = {}
+local anchor_box = nil
 
 -- Remove the single 'box' text object. 
 -- Instead, we will store individual icons and timers for active debuffs.
@@ -39,6 +41,9 @@ step_duration = {}
 erase_abilities = S{2370, 2571, 2714, 2718, 2775, 2831}
 
 partial_erase_abilities = S{1245, 1273}
+
+additional_effect_status_messages = S{160, 164}
+additional_effect_long_duration_statuses = S{130, 149}
 
 debuffs = {
 	[2] = S{253,584,678}, --Sleep I
@@ -107,13 +112,13 @@ debuffs = {
 }
 
 hierarchy = {
-    [23] = 1,  --Dia
-    [24] = 4,  --Dia II
-    [25] = 6,  --Dia III
-    [33] = 2,  --Diaga
-    [230] = 3, --Bio
-    [231] = 5, --Bio II
-    [232] = 7, --Bio III
+    [23] = 1,   -- Dia
+    [33] = 1,   -- Diaga
+    [230] = 2,  -- Bio
+    [24] = 3,   -- Dia II
+    [231] = 4,  -- Bio II
+    [25] = 5,   -- Dia III
+    [232] = 6,  -- Bio III
 }
 
 function apply_dot(target, spell)
@@ -130,7 +135,7 @@ function apply_dot(target, spell)
 	local addTime = 0
 	if windower.ffxi.get_player().main_job == "RDM" and windower.ffxi.get_player().main_job_level == 75 then addTime = 30 end -- add time for RDM group 2 5/5 merits in Enfeebling Duration
 
-	if hierarchy[spell] > priority then
+	if (hierarchy[spell] or 0) > priority then
 		if T{23,24,25,33}:contains(spell) then
 			debuffed_mobs[target][134] = nil
 			debuffed_mobs[target][655] = nil
@@ -173,8 +178,28 @@ function apply_helix(target, spell)
 	elseif windower.ffxi.get_player().main_job_level < 60 then
 		addTime = 60
 	end
-	debuffed_mobs[target][186] = {name = spell, timer = os.clock() + addTime}
+	
+	-- CLEAR SAFETY: A mob can only have one Helix active at a time. 
+	-- This wipes out any old Helix icons before applying the new one so they don't overlap visually!
+	for i = 178, 186 do
+		debuffed_mobs[target][i] = nil
+	end
+
+	-- ELEMENTAL ROUTER: Maps the exact spell ID to your specific element icons
+	local effect = 186 -- Fallback generic ID
+	if T{281, 888}:contains(spell) then effect = 178 -- Fire (Pyrohelix)
+	elseif T{282, 889}:contains(spell) then effect = 179 -- Ice (Cryohelix)
+	elseif T{280, 887}:contains(spell) then effect = 180 -- Wind (Anemohelix)
+	elseif T{278, 885}:contains(spell) then effect = 181 -- Earth (Geohelix)
+	elseif T{283, 890}:contains(spell) then effect = 182 -- Lightning (Ionohelix)
+	elseif T{279, 886}:contains(spell) then effect = 183 -- Water (Hydrohelix)
+	elseif T{285, 892}:contains(spell) then effect = 184 -- Light (Luminohelix)
+	elseif T{284, 891}:contains(spell) then effect = 185 -- Dark (Noctohelix)
+	end
+
+	debuffed_mobs[target][effect] = {name = spell, timer = os.clock() + addTime}
 end
+
 
 ja_spells_names = {
 	[496] = {
@@ -239,11 +264,61 @@ function apply_ja_spells(target, spell)
 	debuffed_mobs[target][1000] = {name = spell, tier = ja_tier, timer = ja_timer}
 end
 
+function apply_additional_effect_status(target, msg, effect)
+	effect = effect or 0
+	if not additional_effect_status_messages:contains(msg) or effect <= 0 then return end
+
+	local duration = 30
+	if additional_effect_long_duration_statuses:contains(effect) then duration = 60 end
+
+	if not debuffed_mobs[target] then debuffed_mobs[target] = {} end
+	debuffed_mobs[target][effect] = {name = "Additional Effect", timer = os.clock() + duration}
+end
+
+local function enable_setup_mode()
+    anchor_box = images.new()
+    
+    anchor_box:size((icon_size + 5) * 10, icon_size + 15) 
+    
+    anchor_box:color(0, 255, 0)
+    anchor_box:alpha(100)
+    anchor_box:pos(base_pos_x, base_pos_y)
+    anchor_box:draggable(true)
+    anchor_box:show()
+
+    for i = 1, 10 do 
+        dummy_images[i] = images.new()
+        dummy_images[i]:path(windower.windower_path .. 'addons/Debuffed/BuffIcons/12.png') 
+        dummy_images[i]:size(icon_size, icon_size)
+        dummy_images[i]:draggable(false)
+        dummy_images[i]:show()
+    end
+end
+
+local function disable_setup_mode()
+    if anchor_box then
+        base_pos_x, base_pos_y = anchor_box:pos()
+        anchor_box:hide()
+        anchor_box:destroy()
+        anchor_box = nil
+    end
+
+    for i, img in ipairs(dummy_images) do
+        img:hide()
+        img:destroy()
+    end
+    dummy_images = {}
+    
+    settings.pos.x = base_pos_x
+    settings.pos.y = base_pos_y
+    config.save(settings, 'all') 
+end
+
+
 function update_box()
     local target = windower.ffxi.get_mob_by_target('st') or windower.ffxi.get_mob_by_target('t')
     local active_effects = {}
 
-    -- 1. Only process if we have a valid NPC target
     if target and target.valid_target and target.is_npc and (target.claim_id ~= 0 or target.spawn_type == 16) then
         local debuff_table = debuffed_mobs[target.id]
 
@@ -266,14 +341,11 @@ function update_box()
         end
     end
 
-    -- 2. Hide all elements so we can redraw from the current anchor
     for _, img in pairs(ui_icons) do img:hide() end
     for _, txt in pairs(ui_timers) do txt:hide() end
 
-    -- 3. Draw the icons and single timers side-by-side
     for i, eff in ipairs(active_effects) do
-        -- Limit to exactly 3 rows of 10 (30 debuffs maximum)
-        if i > 30 then break end 
+        if i > 20 then break end 
 
         local effect_id = eff.id
 
@@ -323,6 +395,90 @@ function update_box()
 end
 
 function inc_action(act)
+    
+	-- ==================================================
+	-- 2-HOUR (SP ABILITY) CATCH-ALL
+	-- ==================================================
+	if act.category == 14 then
+		for i, v in pairs(act.targets) do
+			local target_mob = windower.ffxi.get_mob_by_id(v.id)
+			
+			if target_mob and target_mob.is_npc and target_mob.spawn_type == 16 then
+				local ability_id = act.param
+				local image_id = nil
+
+				if ability_id == 16 then image_id = 44      -- Mighty Strikes
+				elseif ability_id == 17 then image_id = 46  -- Hundred Fists
+				elseif ability_id == 19 then image_id = 47  -- Manafont
+				elseif ability_id == 20 then image_id = 48  -- Chainspell
+				elseif ability_id == 21 then image_id = 49  -- Perfect Dodge
+				elseif ability_id == 22 then image_id = 50  -- Invincible
+				elseif ability_id == 23 then image_id = 51  -- Blood Weapon
+				elseif ability_id == 25 then image_id = 52  -- Soul Voice
+				elseif ability_id == 27 then image_id = 54  -- Meikyo Shisui
+				elseif ability_id == 30 then image_id = 55  -- Astral Flow
+				end
+				
+				if image_id then
+					if not debuffed_mobs[v.id] then debuffed_mobs[v.id] = {} end
+					debuffed_mobs[v.id][image_id] = {name = "2-Hour", timer = os.clock() + 45}
+				end
+			end
+		end
+	end
+	-- ==================================================
+	-- ==================================================
+	-- MOB BUFF CATCH-ALL
+	-- ==================================================
+	-- Cat 4: Magic Finish | Cat 11: TP Move Finish | Cat 13: Avatar Pact Finish
+	if T{4, 11, 13}:contains(act.category) then
+		for i, v in pairs(act.targets) do
+			local target_mob = windower.ffxi.get_mob_by_id(v.id)
+			
+			if target_mob and target_mob.is_npc and target_mob.spawn_type == 16 then
+				for j, a in pairs(v.actions) do
+					local msg = a.message or 0
+					local effect = a.param or 0
+					
+					-- 230: Magic Buffs (Protect, Haste, etc.)
+					-- 186: TP Move Buffs (Stoneskin, Evasion Boost, etc.)
+					-- 237: Standard Retail TP Buffs (Safety net)
+					if T{230, 186, 237}:contains(msg) and effect > 0 then
+						if not debuffed_mobs[v.id] then 
+							debuffed_mobs[v.id] = {} 
+						end
+						
+						-- Applies the buff icon. Defaults to a 3-minute (180s) timer 
+						debuffed_mobs[v.id][effect] = {name = "Mob Buff", timer = os.clock() + 180}
+					end
+				end
+			end
+		end
+	end
+	-- ==================================================
+
+    -- ==================================================
+	-- DEFENSIVE GEAR PROC CATCH-ALL
+	-- ==================================================
+	local player = windower.ffxi.get_player()
+	
+	-- GEAR PROCS (Curse, etc.)
+	if act.actor_id ~= player.id then 
+		for i, v in pairs(act.targets) do
+			for j, a in pairs(v.actions) do
+				local spk_msg = a.spike_effect_message or 0
+				local effect = a.spike_effect_param or 0
+				
+				if T{374}:contains(spk_msg) and effect > 0 then
+					local mob_id = act.actor_id 
+					if not debuffed_mobs[mob_id] then debuffed_mobs[mob_id] = {} end
+					debuffed_mobs[mob_id][effect] = {name = "Gear Proc", timer = os.clock() + 60}
+				end
+			end
+		end
+	end
+	-- ==================================================
+
 
     -- ==================================================
 	-- WIDE NET HUNTER: Catches Angon!
@@ -627,7 +783,7 @@ function inc_action(act)
 					local duration = os.clock() + 60 
 					local name_prefix = res.job_abilities[act.param] and res.job_abilities[act.param].en or "Quick Draw"
 					if not debuffed_mobs[target] then debuffed_mobs[target] = {} end
-					debuffed_mobs[target][effect] = {name = name_prefix, timer = os.clock() + duration}
+					debuffed_mobs[target][effect] = {name = name_prefix, timer = duration}
 				end
 			
 			-- Handle Avatar Magic (Message 0 / Generic)
@@ -677,7 +833,6 @@ function inc_action(act)
 			-- ID 529 is Crescent Fang. Msg 317 is physical damage.
 			elseif act.param == 529 and msg == 317 then
 				if not debuffed_mobs[target] then debuffed_mobs[target] = {} end
-				-- Forces the UI to draw icon 4.png (Paralyze) for 60 seconds
 				debuffed_mobs[target][4] = {name = "Crescent Fang", timer = os.clock() + 60}
 			end
 		end
@@ -700,7 +855,7 @@ function inc_action(act)
 				elseif effect == 312 then effect = 448 -- Feather Step -> Dazed
 				end
 				
-				if tier == 1 then
+				if tier == 1 or not step_duration[effect] then
 					step_duration[effect] = os.clock() + 60
 				elseif step_duration[effect] - os.clock() >= 90 then
 					step_duration[effect] = os.clock() + 120
@@ -720,7 +875,7 @@ function inc_action(act)
 			elseif act.targets[i].actions[1].message == 529 then
 				local target = act.targets[i].id
 				local effect = 430 -- Reroutes both to 430.png
-				local duration = os.clock() + 60 -- Default to 60s for Konzen-ittai
+				local duration = os.clock() + 7 -- Default to 7s for Konzen-ittai
 				local ability_name = "Konzen-ittai"
 				
 				-- If the ability was Wild Flourish (JA ID 209), overwrite the timer and name
@@ -745,43 +900,19 @@ function inc_action(act)
 				local msg2 = action_data.add_effect_message or 0
 				local param = action_data.add_effect_param or 0 -- This grabs the exact debuff ID!
 
-				-- RELIC HUNTER DEBUG (Now showing the Param too)
+				-- RELIC HUNTER DEBUG
 				if msg2 > 0 then
 					--windower.add_to_chat(200, 'RELIC HUNTER -> Msg: '..tostring(msg2)..' | Param: '..tostring(param))
 				end
 
 				local msg = 0
-				if T{161,162,163,164,165,168,169,171}:contains(msg1) then 
-					msg = msg1 
-				elseif T{161,162,163,164,165,168,169,171}:contains(msg2) then 
+				if additional_effect_status_messages:contains(msg2) then 
 					msg = msg2 
+				elseif additional_effect_status_messages:contains(msg1) then 
+					msg = msg1 
 				end
 
-				if msg > 0 then
-					local effect = 0
-					local duration = 30
-					
-					-- The Universal Private Server Catch
-					if msg == 164 then
-						effect = param
-						-- Guttler (130) and Gungnir (149) get 60 seconds
-						if effect == 130 or effect == 149 then duration = 60 end
-					
-					-- Fallback for standard Retail IDs just in case
-					elseif msg == 161 then effect = 3 
-					elseif msg == 162 then effect = 5 
-					elseif msg == 163 then effect = 4 
-					elseif msg == 165 then effect = 130; duration = 60 
-					elseif msg == 168 then effect = 149; duration = 60 
-					elseif msg == 169 then effect = 148 
-					elseif msg == 171 then effect = 147 
-					end
-
-					if effect > 0 then
-						if not debuffed_mobs[target] then debuffed_mobs[target] = {} end
-						debuffed_mobs[target][effect] = {name = "Additional Effect", timer = os.clock() + duration}
-					end
-				end
+				apply_additional_effect_status(target, msg, param)
 			end
 
 			-- CLEAR DEBUFFS: Wake Up Logic
@@ -806,25 +937,8 @@ end
 function inc_action_message(arr)
 	if T{6,20,113,406,605,646}:contains(arr.message_id) then
 		debuffed_mobs[arr.target_id] = nil
-	elseif T{161,162,163,165,168,169,171}:contains(arr.message_id) then
-		local target = arr.target_id
-		local msg = arr.message_id
-		local effect = 0
-		local duration = 30
-		
-		if msg == 161 then effect = 3 -- Poison (Mandau)
-		elseif msg == 162 then effect = 5 -- Blind (Apocalypse)
-		elseif msg == 163 then effect = 4 -- Paralyze (Kikoku)
-		elseif msg == 165 then effect = 130; duration = 60 -- Choke (Guttler)
-		elseif msg == 168 then effect = 149; duration = 60 -- Defense Down (Gungnir)
-		elseif msg == 169 then effect = 148 -- Evasion Down (Bravura)
-		elseif msg == 171 then effect = 147 -- Attack Down (Amanomurakumo)
-		end
-
-		if effect > 0 then
-			if not debuffed_mobs[target] then debuffed_mobs[target] = {} end
-			debuffed_mobs[target][effect] = {name = "Additional Effect", timer = os.clock() + duration}
-		end
+	elseif additional_effect_status_messages:contains(arr.message_id) then
+		apply_additional_effect_status(arr.target_id, arr.message_id, arr.param_1)
 	elseif T{204,206}:contains(arr.message_id) then
 		if debuffed_mobs[arr.target_id] then
 			if arr.message_id == 206 then
@@ -897,12 +1011,17 @@ function inc_action_message(arr)
 				elseif arr.param_1 == 149 then
 					debuffed_mobs[arr.target_id][149] = nil
 					debuffed_mobs[arr.target_id][170] = nil
+					
+				-- HELIX CLEAR LOGIC
+				elseif arr.param_1 >= 178 and arr.param_1 <= 186 then
+					for i = 178, 186 do
+						debuffed_mobs[arr.target_id][i] = nil
+					end
+					
 				else
 					debuffed_mobs[arr.target_id][arr.param_1] = nil
 				end
-			else
-				debuffed_mobs[arr.target_id][arr.param_1] = nil
-			end
+			end	
 		end
 	end
 end
@@ -915,7 +1034,6 @@ windower.register_event('incoming chunk', function(id, data)
 	if id == 0x028 then
 		inc_action(windower.packets.parse_action(data))
 	elseif id == 0x029 then
-		-- This uses Windower's library to perfectly read your server's data
 		local packet = packets.parse('incoming', data)
 		local arr = {}
 		arr.target_id = packet['Target']
@@ -927,19 +1045,65 @@ windower.register_event('incoming chunk', function(id, data)
 end)
 
 windower.register_event('prerender', function()
-	local curr = os.clock()
-	if curr > frame_time + .1 then
-		frame_time = curr
-		update_box()
-	end
+    if is_setup_mode then 
+        if anchor_box then
+            local cur_x, cur_y = anchor_box:pos()
+            
+            for i, img in ipairs(dummy_images) do
+                local col = (i - 1) % 10 
+                img:pos(cur_x + (col * (icon_size + 5)), cur_y)
+            end
+        end
+        return
+    end
+    
+    local curr = os.clock()
+    if curr > frame_time + .1 then
+        frame_time = curr
+        update_box()
+    end
 end)
 
 windower.register_event('unload', function()
-    -- This destroys all icons and timers when you reload or unload the addon
     for _, img in pairs(ui_icons) do
         if img then img:destroy() end
     end
     for _, txt in pairs(ui_timers) do
         if txt then txt:destroy() end
+    end
+end)
+
+windower.register_event('addon command', function(...)
+    local args = {...}
+    local cmd = args[1] and args[1]:lower()
+
+    if cmd == 'setup' then
+        is_setup_mode = not is_setup_mode
+        if is_setup_mode then
+            for _, img in pairs(ui_icons) do img:hide() end
+            for _, txt in pairs(ui_timers) do txt:hide() end
+            
+            windower.add_to_chat(207, 'Debuffed: Setup mode ON.')
+            enable_setup_mode()
+        else
+            windower.add_to_chat(207, 'Debuffed: Setup mode OFF.')
+            disable_setup_mode()
+        end
+        
+    elseif cmd == 'pos' and is_setup_mode then
+        local new_x = tonumber(args[2])
+        local new_y = tonumber(args[3])
+        
+        if new_x and new_y then
+            base_pos_x = new_x
+            base_pos_y = new_y
+            for i, img in ipairs(dummy_images) do
+                local col = (i - 1) % 10 
+                img:pos(base_pos_x + (col * (icon_size + 5)), base_pos_y)
+            end
+            windower.add_to_chat(207, 'Debuffed: Position updated to ' .. new_x .. ', ' .. new_y)
+        else
+            windower.add_to_chat(167, 'Debuffed: Invalid coordinates. Use //debuffed pos x y')
+        end
     end
 end)
