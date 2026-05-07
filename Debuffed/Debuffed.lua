@@ -22,6 +22,9 @@ settings.buff_pos = settings.buff_pos or {x = base_pos_x, y = base_pos_y + 100}
 buff_pos_x = settings.buff_pos.x
 buff_pos_y = settings.buff_pos.y
 
+defaults.blacklist = S{'name of mob to ignore', 'another trash mob'}
+defaults.whitelist = S{'specific nm name', 'another nm'}
+
 local is_setup_mode = false
 local dummy_images = {}
 local anchor_box = nil
@@ -56,6 +59,8 @@ partial_erase_abilities = S{1245, 1273}
 
 additional_effect_status_messages = S{160, 164}
 additional_effect_long_duration_statuses = S{130, 149}
+
+
 
 debuffs = {
 	[2] = S{253,584,678}, --Sleep I
@@ -368,7 +373,18 @@ function update_box()
     local active_debuffs = {}
     local active_buffs = {}
 
-    if target and target.valid_target and target.is_npc and (target.claim_id ~= 0 or target.spawn_type == 16) then
+    local current_filter = settings.filter_mode or 'blacklist'
+    local is_allowed = true
+
+    if target and target.valid_target then
+        if current_filter == 'blacklist' and settings.blacklist:contains(target.name:lower()) then
+            is_allowed = false
+        elseif current_filter == 'whitelist' and not settings.whitelist:contains(target.name:lower()) then
+            is_allowed = false
+        end
+    end
+
+    if is_allowed and target and target.valid_target and target.is_npc and (target.claim_id ~= 0 or target.spawn_type == 16) then
         local debuff_table = debuffed_mobs[target.id]
         if debuff_table then
             for effect_id, spell_data in pairs(debuff_table) do
@@ -1304,6 +1320,18 @@ windower.register_event('addon command', function(...)
         else
             settings.buff_direction = 'reverse'
             windower.add_to_chat(207, 'Debuffed: Buffs will now draw Right-to-Left (Reverse).')
+        end
+	
+	elseif cmd == 'filter' then
+        -- Uses a new setting name so it doesn't conflict with your text/icon 'mode'
+        settings.filter_mode = settings.filter_mode or 'blacklist'
+        
+        if settings.filter_mode == 'blacklist' then
+            settings.filter_mode = 'whitelist'
+            windower.add_to_chat(207, 'Debuffed: Target filtering set to WHITELIST.')
+        else
+            settings.filter_mode = 'blacklist'
+            windower.add_to_chat(207, 'Debuffed: Target filtering set to BLACKLIST.')
         end
         
         config.save(settings, 'all')
