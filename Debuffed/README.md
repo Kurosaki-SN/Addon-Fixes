@@ -32,21 +32,27 @@ Allows you to manually set the exact X and Y pixel coordinates of your main anch
 
 Toggles between Icon mode and text mode, whichever you prefer.
 
-`//debuffed timers`
+•`//debuffed timers`
 
 This toggles the display of timers for debuffs.
 
-`//debuffed interval <value>`
+•`//debuffed interval <value>`
 
 This allows you to adjust the refresh interval for the textbox. It will be updated every \<value\> number of seconds.
 
-`//debuffed hide`
+•`//debuffed hide`
 
 This toggles the automatic removal of effects when their timer reaches zero.
 
-`//debuffed blacklist|whitelist add|remove <name>`
+•`//debuffed blacklist|whitelist add|remove <name>`
 
 This adds or removes the spell \<name\> to the specified filter.
+
+•`//debuffed filter`
+
+Switches between blacklist and whitelist modes. Default set to blacklist
+
+
 
 ### Abbreviations
 
