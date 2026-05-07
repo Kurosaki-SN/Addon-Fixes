@@ -268,7 +268,7 @@ function parse_action_packet(act)
                 end
                 local msg,numb = simplify_message(m.message), ''
                 if not color_arr[act.actor.owner or act.actor.type] then windower.add_to_chat(123,'Battlemod error, missing filter:'..tostring(act.actor.owner)..' '..tostring(act.actor.type)) end
-                if m.fields.status then numb = m.status else numb = pref_suf((m.message == 674 and m.add_effect_param or m.cparam or m.param),m.message,act.actor.damage,col) end
+                if m.fields.status then numb = m.status or '' else numb = pref_suf((m.message == 674 and m.add_effect_param or m.cparam or m.param),m.message,act.actor.damage,col) end
     
                 if msg and m.message == 70 and not simplify then -- fix pronoun on parry
                     if v.target[1].race == 0 then
@@ -315,7 +315,7 @@ function parse_action_packet(act)
                     :gsub('${item2}',count..color_it(act.action.item2 or 'ERROR 121',color_arr.itemcol))
                     :gsub('${weapon_skill}',act.action.weapon_skill or 'ERROR 114')
                     :gsub('${abil}',m.simp_name or 'ERROR 115')
-                    :gsub('${numb}',numb..roll or 'ERROR 116')
+                    :gsub('${numb}',(numb or '')..roll or 'ERROR 116')
                     :gsub('${actor}\'s',color_it(act.actor.name or 'ERROR 117',color_arr[act.actor.owner or act.actor.type])..'\'s'..act.actor.owner_name)
                     :gsub('${actor}',color_it(act.actor.name or 'ERROR 117',color_arr[act.actor.owner or act.actor.type])..act.actor.owner_name)
                     :gsub('${target}\'s',targ)
@@ -346,7 +346,7 @@ function parse_action_packet(act)
                 elseif m.add_effect_message == 776 then m.simp_add_name = 'AE: Chainbound'
                 else m.simp_add_name = 'AE'
                 end
-                local msg,numb = simplify_message(m.add_effect_message)
+                local msg,numb = simplify_message(m.add_effect_message), ''
                 if not simplify then
                     if col == 'D' or grammar_numb_msg:contains(m.add_effect_message) then
                         msg = grammatical_number_fix(msg, (m.cparam or m.param), m.add_effect_message)
@@ -361,7 +361,7 @@ function parse_action_packet(act)
                         msg = plural_target(msg, m.add_effect_message)
                     end
                 end
-                if m.add_effect_fields.status then numb = m.add_effect_status else numb = pref_suf((m.cadd_effect_param or m.add_effect_param),m.add_effect_message,act.actor.damage,col) end
+                if m.add_effect_fields.status then numb = m.add_effect_status or '' else numb = pref_suf((m.cadd_effect_param or m.add_effect_param),m.add_effect_message,act.actor.damage,col) end
                 if not act.action then
 --                    windower.add_to_chat(color, 'act.action==nil : '..m.message..' - '..m.add_effect_message..' - '..msg)
                 else
@@ -407,7 +407,7 @@ function parse_action_packet(act)
                     actor = v.target[1] --Spikes dmg is done by the target, fix for coloring the dmg
                 end
 
-                local msg = simplify_message(m.spike_effect_message)
+                local msg,numb = simplify_message(m.spike_effect_message), ''
                 if not simplify then
                     if col == 'D' or grammar_numb_msg:contains(m.spike_effect_message) then
                         msg = grammatical_number_fix(msg, (m.cparam or m.param), m.spike_effect_message)
@@ -422,7 +422,7 @@ function parse_action_packet(act)
                         msg = plural_target(msg, m.spike_effect_message)
                     end
                 end
-                if m.spike_effect_fields.status then numb = m.spike_effect_status else numb = pref_suf((m.cspike_effect_param or m.spike_effect_param),m.spike_effect_message,actor.damage,col) end
+                if m.spike_effect_fields.status then numb = m.spike_effect_status or '' else numb = pref_suf((m.cspike_effect_param or m.spike_effect_param),m.spike_effect_message,actor.damage,col) end
                 windower.add_to_chat(color,make_condensedamage_number(m.spike_effect_number)..(clean_msg(msg
                     :gsub('${spell}',act.action.spell or 'ERROR 142')
                     :gsub('${ability}',act.action.ability or 'ERROR 143')
