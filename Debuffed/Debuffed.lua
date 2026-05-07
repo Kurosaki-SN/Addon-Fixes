@@ -18,6 +18,10 @@ settings = config.load(defaults)
 base_pos_x = settings.pos.x
 base_pos_y = settings.pos.y
 
+settings.buff_pos = settings.buff_pos or {x = base_pos_x, y = base_pos_y + 100}
+buff_pos_x = settings.buff_pos.x
+buff_pos_y = settings.buff_pos.y
+
 local is_setup_mode = false
 local dummy_images = {}
 local anchor_box = nil
@@ -26,7 +30,9 @@ local anchor_box = nil
 -- Instead, we will store individual icons and timers for active debuffs.
 ui_icons = {}
 ui_timers = {}
-icon_size = 20 -- Adjust this to match your .png dimensions
+text_box = texts.new()
+buff_text_box = texts.new()
+icon_size = 24 -- Adjust this to match your .png dimensions
 
 frame_time = 0
 debuffed_mobs = {}
@@ -36,9 +42,15 @@ helixes = S{278,279,280,281,282,283,284,285,
 
 ja_spells = S{496,497,498,499,500,501}
 
+-- Broad song bucket for mob Bard songs. Display as 220.
+mob_song_statuses = S{195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222}
+
 step_duration = {}
 
 erase_abilities = S{2370, 2571, 2714, 2718, 2775, 2831}
+
+status_remove_action_messages = S{64,159,204,206}
+dispelling_action_ids = S{260,462}
 
 partial_erase_abilities = S{1245, 1273}
 
@@ -108,6 +120,9 @@ debuffs = {
     [135] = S{230}, --Bio I
 	[653] = S{231}, --Bio II
 	[654] = S{232}, --Bio III
+	[657] = S{80},  -- Paralyze II
+	[658] = S{79},  -- Slow II
+	[659] = S{276}, -- Blind II
 
 }
 
@@ -119,6 +134,20 @@ hierarchy = {
     [231] = 4,  -- Bio II
     [25] = 5,   -- Dia III
     [232] = 6,  -- Bio III
+}
+
+sleep_hierarchy = {
+    [463] = 1,  -- Foe Lullaby
+    [376] = 1,  -- Horde Lullaby
+    [253] = 2,  -- Sleep
+    [273] = 2,  -- Sleepga
+    [584] = 2,  -- Sheep Song
+    [678] = 2,  -- Pinecone Bomb
+    [98]  = 3,  -- Repose
+    [259] = 3,  -- Sleep II
+    [274] = 3,  -- Sleepga II
+    [576] = 3,  -- Soporific
+    [598] = 3,  -- Yawn
 }
 
 function apply_dot(target, spell)
@@ -275,126 +304,207 @@ function apply_additional_effect_status(target, msg, effect)
 	debuffed_mobs[target][effect] = {name = "Additional Effect", timer = os.clock() + duration}
 end
 
+local buff_anchor_box = nil
+
 local function enable_setup_mode()
+    -- RED BOX FOR DEBUFFS
     anchor_box = images.new()
-    
-    anchor_box:size((icon_size + 5) * 10, icon_size + 15) 
-    
-    anchor_box:color(0, 255, 0)
+    anchor_box:size((icon_size + 5) * 10, icon_size + 15)
+    anchor_box:color(255, 0, 0) 
     anchor_box:alpha(100)
     anchor_box:pos(base_pos_x, base_pos_y)
     anchor_box:draggable(true)
     anchor_box:show()
 
-    for i = 1, 10 do 
-        dummy_images[i] = images.new()
-        dummy_images[i]:path(windower.windower_path .. 'addons/Debuffed/BuffIcons/12.png') 
-        dummy_images[i]:size(icon_size, icon_size)
-        dummy_images[i]:draggable(false)
-        dummy_images[i]:show()
-    end
+    -- BLUE BOX FOR BUFFS
+    buff_anchor_box = images.new()
+    buff_anchor_box:size((icon_size + 5) * 10, icon_size + 15)
+    buff_anchor_box:color(0, 0, 255) 
+    buff_anchor_box:alpha(100)
+    buff_anchor_box:pos(buff_pos_x, buff_pos_y)
+    buff_anchor_box:draggable(true)
+    buff_anchor_box:show()
+    
+    windower.add_to_chat(207, 'Debuffed: Drag the RED box for Debuffs, BLUE box for Buffs.')
 end
 
 local function disable_setup_mode()
+    local function snap(val)
+        return math.floor((val + 5) / 10) * 10
+    end
+
     if anchor_box then
-        base_pos_x, base_pos_y = anchor_box:pos()
+        local ax, ay = anchor_box:pos()
+        base_pos_x = snap(ax)
+        base_pos_y = snap(ay)
+        
         anchor_box:hide()
         anchor_box:destroy()
         anchor_box = nil
     end
-
-    for i, img in ipairs(dummy_images) do
-        img:hide()
-        img:destroy()
-    end
-    dummy_images = {}
     
+    if buff_anchor_box then
+        local bx, by = buff_anchor_box:pos()
+        buff_pos_x = snap(bx)
+        buff_pos_y = snap(by)
+        
+        buff_anchor_box:hide()
+        buff_anchor_box:destroy()
+        buff_anchor_box = nil
+    end
+
     settings.pos.x = base_pos_x
     settings.pos.y = base_pos_y
+    settings.buff_pos.x = buff_pos_x
+    settings.buff_pos.y = buff_pos_y
     config.save(settings, 'all') 
 end
 
 
+
+
 function update_box()
     local target = windower.ffxi.get_mob_by_target('st') or windower.ffxi.get_mob_by_target('t')
-    local active_effects = {}
+    local active_debuffs = {}
+    local active_buffs = {}
 
     if target and target.valid_target and target.is_npc and (target.claim_id ~= 0 or target.spawn_type == 16) then
         local debuff_table = debuffed_mobs[target.id]
-
         if debuff_table then
             for effect_id, spell_data in pairs(debuff_table) do
-                if spell_data then
-                    if type(spell_data) == 'table' then
-                        local remaining = spell_data.timer - os.clock()
-                        if remaining >= 0 then
-                            table.insert(active_effects, {id = effect_id, time = remaining})
-                        else
-                            debuff_table[effect_id] = nil
-                        end
+                if spell_data and type(spell_data) == 'table' then
+                    local remaining = spell_data.timer - os.clock()
+                    if remaining >= 0 then
+                        local eff = {id = effect_id, time = remaining, name = spell_data.name}
+                        if spell_data.is_buff then table.insert(active_buffs, eff)
+                        else table.insert(active_debuffs, eff) end
                     else
-                        -- For debuffs without a timer (like Absorb spells)
-                        table.insert(active_effects, {id = effect_id, time = nil})
+                        debuff_table[effect_id] = nil
                     end
                 end
             end
         end
     end
 
-    for _, img in pairs(ui_icons) do img:hide() end
-    for _, txt in pairs(ui_timers) do txt:hide() end
+    table.sort(active_debuffs, function(a, b) return a.id < b.id end)
+    table.sort(active_buffs, function(a, b) return a.id < b.id end)
+    settings.display_mode = settings.display_mode or 'icon'
 
-    for i, eff in ipairs(active_effects) do
-        if i > 20 then break end 
+    if settings.display_mode == 'text' then
+        for _, img in pairs(ui_icons) do img:hide() end
+        for _, txt in pairs(ui_timers) do txt:hide() end
 
-        local effect_id = eff.id
-
-        -- Image Setup
-        if not ui_icons[effect_id] then
-            ui_icons[effect_id] = images.new()
-            ui_icons[effect_id]:path(windower.windower_path .. 'addons/Debuffed/BuffIcons/' .. effect_id .. '.png')
-            ui_icons[effect_id]:draggable(false)
+        local function format_text(effect_list, title)
+            if #effect_list == 0 then return nil end
+            local lines = {' \\cs(255,255,0)[' .. target.name .. '] ' .. title .. '\\cr'}
+            for _, eff in ipairs(effect_list) do
+                local time_str = eff.time and string.format('%.0f', eff.time)..'s' or 'N/A'
+                local name_str = eff.name
+                if type(name_str) == 'number' then
+                    if res.buffs and res.buffs[eff.id] then name_str = res.buffs[eff.id].en 
+                    elseif res.spells and res.spells[name_str] then name_str = res.spells[name_str].en 
+                    elseif res.job_abilities and res.job_abilities[name_str] then name_str = res.job_abilities[name_str].en 
+                    else name_str = "Effect ID: " .. tostring(eff.id) end
+                end
+                table.insert(lines, ' ' .. (name_str or "Unknown") .. ' : ' .. time_str)
+            end
+            return table.concat(lines, '\n')
         end
 
-            ui_icons[effect_id]:size(icon_size, icon_size)
+        local d_text = format_text(active_debuffs, "(Debuffs)")
+        if d_text then
+            text_box:text(d_text); text_box:pos(base_pos_x, base_pos_y)
+            text_box:font(settings.text.font); text_box:size(settings.text.size)
+            text_box:color(settings.text.red, settings.text.green, settings.text.blue)
+            text_box:bg_alpha(200); text_box:show()
+        else text_box:hide() end
 
-        -- Timer Setup
-        if not ui_timers[effect_id] then
-            ui_timers[effect_id] = texts.new()
-            ui_timers[effect_id]:draggable(false)
-            ui_timers[effect_id]:font(settings.text.font)
-            ui_timers[effect_id]:size(settings.text.size)
-            ui_timers[effect_id]:color(settings.text.red, settings.text.green, settings.text.blue)
-            ui_timers[effect_id]:stroke_width(0)
-            ui_timers[effect_id]:stroke_alpha(0)
-            ui_timers[effect_id]:bg_alpha(0)
+        local b_text = format_text(active_buffs, "(Buffs)")
+        if b_text then
+            buff_text_box:text(b_text); buff_text_box:pos(buff_pos_x, buff_pos_y)
+            buff_text_box:font(settings.text.font); buff_text_box:size(settings.text.size)
+            buff_text_box:color(settings.text.red, settings.text.green, settings.text.blue)
+            buff_text_box:bg_alpha(200); buff_text_box:show()
+        else buff_text_box:hide() end
+
+    else
+        text_box:hide(); buff_text_box:hide()
+        for _, img in pairs(ui_icons) do img:hide() end
+        for _, txt in pairs(ui_timers) do txt:hide() end
+
+        local function draw_grid(effect_list, start_x, start_y, is_reversed)
+            for i, eff in ipairs(effect_list) do
+                if i > 20 then break end 
+                local e_id = eff.id
+                if not ui_icons[e_id] then
+                    ui_icons[e_id] = images.new()
+                    ui_icons[e_id]:path(windower.windower_path .. 'addons/Debuffed/BuffIcons/' .. e_id .. '.png')
+                    ui_icons[e_id]:draggable(false)
+                end
+				
+				ui_icons[e_id]:size(icon_size, icon_size)
+
+                if not ui_timers[e_id] then
+                    ui_timers[e_id] = texts.new(); ui_timers[e_id]:draggable(false)
+                    ui_timers[e_id]:font(settings.text.font); ui_timers[e_id]:size(settings.text.size)
+                    ui_timers[e_id]:color(settings.text.red, settings.text.green, settings.text.blue)
+                    ui_timers[e_id]:stroke_alpha(0); ui_timers[e_id]:bg_alpha(0)
+                end
+
+                local col, row = (i - 1) % 10, math.floor((i - 1) / 10) 
+                
+                local cur_x
+                if is_reversed then
+                    local right_edge = start_x + (9 * (icon_size + 5))
+                    cur_x = right_edge - (col * (icon_size + 5))
+                else
+                    cur_x = start_x + (col * (icon_size + 5))
+                end
+                
+                local cur_y = start_y + (row * (icon_size + 15)) 
+                
+                ui_icons[e_id]:pos(cur_x, cur_y); ui_icons[e_id]:show()
+                if eff.time then
+                    ui_timers[e_id]:pos(cur_x, cur_y + icon_size)
+                    ui_timers[e_id]:text(string.format('%.0f', eff.time)); ui_timers[e_id]:show()
+                end
+            end
         end
 
-        -- GRID POSITION MATH
-        -- 'col' counts 0 to 9, then resets to 0 for the next row
-        local col = (i - 1) % 10 
-        -- 'row' stays 0 for the first 10, becomes 1 for the next 10, etc.
-        local row = math.floor((i - 1) / 10) 
-
-        -- Calculate X based on column (with 5 pixels padding between icons)
-        local current_x = base_pos_x + (col * (icon_size + 5))
+        draw_grid(active_debuffs, base_pos_x, base_pos_y, false)
         
-        -- Calculate Y based on row. 
-        -- We add 15 extra pixels to the row height to leave room for the timer text.
-        local current_y = base_pos_y + (row * (icon_size + 15)) 
-        
-        ui_icons[effect_id]:pos(current_x, current_y)
-        ui_icons[effect_id]:show()
-
-        if eff.time then
-            ui_timers[effect_id]:pos(current_x, current_y + icon_size)
-            ui_timers[effect_id]:text(string.format('%.0f', eff.time))
-            ui_timers[effect_id]:show()
+        -- Buffs check your toggle setting
+        local is_buffs_reversed = true -- Default to your preference
+        if settings.buff_direction == 'normal' then
+            is_buffs_reversed = false
         end
+        
+        draw_grid(active_buffs, buff_pos_x, buff_pos_y, is_buffs_reversed)
     end
 end
 
 function inc_action(act)
+
+    -- ==================================================
+	-- DISPEL & MAGIC FINALE CATCHER
+	-- ==================================================
+	if act.targets then
+		for i, v in pairs(act.targets) do
+			if v.actions then
+				for j, a in pairs(v.actions) do
+					local msg = a.message or 0
+					local effect = a.param or 0
+
+					-- If the action is Dispel/Finale, OR the message means a status was removed
+					if effect > 0 and (status_remove_action_messages:contains(msg) or dispelling_action_ids:contains(act.param)) then
+						if debuffed_mobs[v.id] then
+							debuffed_mobs[v.id][effect] = nil
+						end
+					end
+				end
+			end
+		end
+	end
     
 	-- ==================================================
 	-- 2-HOUR (SP ABILITY) CATCH-ALL
@@ -421,7 +531,7 @@ function inc_action(act)
 				
 				if image_id then
 					if not debuffed_mobs[v.id] then debuffed_mobs[v.id] = {} end
-					debuffed_mobs[v.id][image_id] = {name = "2-Hour", timer = os.clock() + 45}
+					debuffed_mobs[v.id][image_id] = {name = "2-Hour", timer = os.clock() + 45, is_buff = true}
 				end
 			end
 		end
@@ -448,8 +558,11 @@ function inc_action(act)
 							debuffed_mobs[v.id] = {} 
 						end
 						
+				if mob_song_statuses:contains(effect) then 
+                            effect = 220 
+                        end		
 						-- Applies the buff icon. Defaults to a 3-minute (180s) timer 
-						debuffed_mobs[v.id][effect] = {name = "Mob Buff", timer = os.clock() + 180}
+						debuffed_mobs[v.id][effect] = {name = "Mob Buff", timer = os.clock() + 180, is_buff = true}
 					end
 				end
 			end
@@ -567,9 +680,6 @@ function inc_action(act)
 					duration = os.clock() + 30
 				elseif T{376,463}:contains(spell) then -- horde and foe lullaby, assuming lullaby +2 on instrument because it's easier to see a debuff wear early rather than late
 					duration = os.clock() + 36
-					if debuffed_mobs[target] and debuffed_mobs[target][2] then
-						debuffed_mobs[target][2] = nil
-					end
 				elseif T{253,258,273,531,561,584,588,610,651,678,682,687,707,722,725}:contains(spell) then -- 1 min spells durations
 					duration = os.clock() + 60
 				elseif T{454,455,456,457,458,459,460,461,606}:contains(spell) then
@@ -588,9 +698,6 @@ function inc_action(act)
 					end]]
 				elseif T{377,471}:contains(spell) then -- horde and foe lullaby II
 					duration = os.clock() + 90
-					if debuffed_mobs[target] and debuffed_mobs[target][2] then
-						debuffed_mobs[target][2] = nil
-					end
 				elseif T{369}:contains(spell) then
 					duration = os.clock() + 94
 				elseif T{370}:contains(spell) then
@@ -667,27 +774,60 @@ function inc_action(act)
 					effect = 652 -- Reroutes Poison II & Poisonga II
 					if debuffed_mobs[target] then debuffed_mobs[target][3] = nil end -- Clears Poison I
 				
-				-- Groups Sleep AND Lullaby together to bypass private server bugs
 				elseif effect == 2 or T{376,377,463,471}:contains(spell) then
-					if T{273}:contains(spell) then
-						effect = 650 -- Reroutes Sleepga I
-					elseif T{274,576,598}:contains(spell) then
-						effect = 651 -- Reroutes Sleepga II
-					elseif T{98,259}:contains(spell) then
-						effect = 19 -- Reroutes Sleep II and Repose
-					elseif T{376,377}:contains(spell) then
-						effect = 640 -- Reroutes Horde Lullaby
-					elseif T{463,471}:contains(spell) then
-						effect = 193 -- Reroutes Foe Lullaby
+					local current_prio = 0
+					
+					local current = debuffed_mobs[target][2] or debuffed_mobs[target][650] or debuffed_mobs[target][19] or debuffed_mobs[target][651] or debuffed_mobs[target][193] or debuffed_mobs[target][640]
+					
+					if current then
+						current_prio = sleep_hierarchy[current.name] or 0
+					end
+
+					local incoming_prio = sleep_hierarchy[spell] or 0
+
+					if incoming_prio >= current_prio then
+						debuffed_mobs[target][2] = nil
+						debuffed_mobs[target][650] = nil
+						debuffed_mobs[target][19] = nil
+						debuffed_mobs[target][651] = nil
+						debuffed_mobs[target][193] = nil
+						debuffed_mobs[target][640] = nil
+						
+						if T{273}:contains(spell) then effect = 650
+						elseif T{274,576,598}:contains(spell) then effect = 651
+						elseif T{98,259}:contains(spell) then effect = 19
+						elseif T{376,377}:contains(spell) then effect = 640
+						elseif T{463,471}:contains(spell) then effect = 193
+						else effect = 2 end
+					else
+						effect = 0 
+					end
+				-- Paralyze Hierarchy
+				elseif effect == 4 then
+					if T{80}:contains(spell) then -- Spell ID for Paralyze II
+						effect = 657
+						if debuffed_mobs[target] then debuffed_mobs[target][4] = nil end
+					elseif debuffed_mobs[target] and debuffed_mobs[target][657] then
+						effect = 0 -- Ignores Paralyze I if Paralyze II is already active
 					end
 					
-					-- Clears weaker sleep icons if overwritten by stronger ones
-					if effect == 19 or effect == 650 or effect == 651 or effect == 640 or effect == 193 then
-						if debuffed_mobs[target] then 
-							debuffed_mobs[target][2] = nil 
-							if effect == 651 or effect == 19 then debuffed_mobs[target][650] = nil end
-						end
+				-- Slow Hierarchy
+				elseif effect == 13 then
+					if T{79}:contains(spell) then -- Spell ID for Slow II
+						effect = 658
+						if debuffed_mobs[target] then debuffed_mobs[target][13] = nil end
+					elseif debuffed_mobs[target] and debuffed_mobs[target][658] then
+						effect = 0 -- Ignores Slow I if Slow II is already active
 					end
+					
+				-- Blind Hierarchy
+				elseif effect == 5 then
+					if T{276}:contains(spell) then -- Spell ID for Blind II
+						effect = 659
+						if debuffed_mobs[target] then debuffed_mobs[target][5] = nil end
+					elseif debuffed_mobs[target] and debuffed_mobs[target][659] then
+						effect = 0 -- Ignores Blind I if Blind II is already active
+					end	
 				elseif effect == 217 then
 					if T{454,871}:contains(spell) then effect = 641
 					elseif T{455,872}:contains(spell) then effect = 642
@@ -796,6 +936,15 @@ function inc_action(act)
 					debuffed_mobs[target][13] = {name = "Slowga", timer = os.clock() + 180}
 				elseif spell == 657 then -- Diabolos: Somnolence (Weight)
 					debuffed_mobs[target][12] = {name = "Somnolence", timer = os.clock() + 180}
+				elseif spell == 659 then 
+					local dur = os.clock() + 60
+					debuffed_mobs[target][136] = {name = "Ultimate Terror", timer = dur} -- STR
+					debuffed_mobs[target][137] = {name = "Ultimate Terror", timer = dur} -- DEX
+					debuffed_mobs[target][138] = {name = "Ultimate Terror", timer = dur} -- VIT
+					debuffed_mobs[target][139] = {name = "Ultimate Terror", timer = dur} -- AGI
+					debuffed_mobs[target][140] = {name = "Ultimate Terror", timer = dur} -- INT
+					debuffed_mobs[target][141] = {name = "Ultimate Terror", timer = dur} -- MND
+					debuffed_mobs[target][142] = {name = "Ultimate Terror", timer = dur} -- CHR
 				end
 			end
 		end
@@ -823,12 +972,25 @@ function inc_action(act)
 				
 				debuffed_mobs[target][effect] = {name = ability_name, timer = os.clock() + duration}
 			
-			-- 2. Multi-Debuff Catch (Lunar Cry)
-			elseif msg == 144 then
+			elseif msg == 144 or act.param == 659 then
 				if not debuffed_mobs[target] then debuffed_mobs[target] = {} end
-				debuffed_mobs[target][146] = {name = "Lunar Cry", timer = os.clock() + 180}
-				debuffed_mobs[target][148] = {name = "Lunar Cry", timer = os.clock() + 180}
 				
+				-- Fenrir: Lunar Cry
+				if act.param == 530 then 
+					debuffed_mobs[target][146] = {name = "Lunar Cry", timer = os.clock() + 180}
+					debuffed_mobs[target][148] = {name = "Lunar Cry", timer = os.clock() + 180}
+					
+				-- Diabolos: Ultimate Terror (Cat 13)
+				elseif act.param == 659 then 
+					local dur = os.clock() + 60
+					debuffed_mobs[target][136] = {name = "Ultimate Terror", timer = dur}
+					debuffed_mobs[target][137] = {name = "Ultimate Terror", timer = dur}
+					debuffed_mobs[target][138] = {name = "Ultimate Terror", timer = dur}
+					debuffed_mobs[target][139] = {name = "Ultimate Terror", timer = dur}
+					debuffed_mobs[target][140] = {name = "Ultimate Terror", timer = dur}
+					debuffed_mobs[target][141] = {name = "Ultimate Terror", timer = dur}
+					debuffed_mobs[target][142] = {name = "Ultimate Terror", timer = dur}
+				end
 			-- 3. SILENT PROC CATCH (Crescent Fang)
 			-- ID 529 is Crescent Fang. Msg 317 is physical damage.
 			elseif act.param == 529 and msg == 317 then
@@ -869,16 +1031,12 @@ function inc_action(act)
 				
 				debuffed_mobs[target][effect] = {name = name_prefix.." lv."..tier, timer = step_duration[effect]}
 			
-			-- ==================================================
-			-- SKILLCHAIN WINDOW CATCH (Konzen-ittai & Wild Flourish)
-			-- ==================================================
 			elseif act.targets[i].actions[1].message == 529 then
 				local target = act.targets[i].id
 				local effect = 430 -- Reroutes both to 430.png
 				local duration = os.clock() + 7 -- Default to 7s for Konzen-ittai
 				local ability_name = "Konzen-ittai"
 				
-				-- If the ability was Wild Flourish (JA ID 209), overwrite the timer and name
 				if act.param == 209 then
 					duration = os.clock() + 7
 					ability_name = "Wild Flourish"
@@ -891,31 +1049,10 @@ function inc_action(act)
 				debuffed_mobs[target][effect] = {name = ability_name, timer = duration}
 			end  
 		end
-	elseif act.category == 1 then
+	elseif act.category == 1 or act.category == 2 then
 		for i, v in pairs(act.targets) do
 			local target = v.id
 			
-			for j, action_data in pairs(v.actions) do
-				local msg1 = action_data.message or 0
-				local msg2 = action_data.add_effect_message or 0
-				local param = action_data.add_effect_param or 0 -- This grabs the exact debuff ID!
-
-				-- RELIC HUNTER DEBUG
-				if msg2 > 0 then
-					--windower.add_to_chat(200, 'RELIC HUNTER -> Msg: '..tostring(msg2)..' | Param: '..tostring(param))
-				end
-
-				local msg = 0
-				if additional_effect_status_messages:contains(msg2) then 
-					msg = msg2 
-				elseif additional_effect_status_messages:contains(msg1) then 
-					msg = msg1 
-				end
-
-				apply_additional_effect_status(target, msg, param)
-			end
-
-			-- CLEAR DEBUFFS: Wake Up Logic
 			if debuffed_mobs[target] then
 				if debuffed_mobs[target][2] or debuffed_mobs[target][19] or debuffed_mobs[target][193] or debuffed_mobs[target][640] or debuffed_mobs[target][650] or debuffed_mobs[target][651] then
 					debuffed_mobs[target][2] = nil
@@ -930,9 +1067,24 @@ function inc_action(act)
 					debuffed_mobs[target][28] = nil
 				end
 			end
+
+			for j, action_data in pairs(v.actions) do
+				local msg1 = action_data.message or 0
+				local msg2 = action_data.add_effect_message or 0
+				local param = action_data.add_effect_param or 0 
+
+				local msg = 0
+				if additional_effect_status_messages:contains(msg2) then 
+					msg = msg2 
+				elseif additional_effect_status_messages:contains(msg1) then 
+					msg = msg1 
+				end
+
+				apply_additional_effect_status(target, msg, param)
+			end
 		end
 	end
-end	
+end
 
 function inc_action_message(arr)
 	if T{6,20,113,406,605,646}:contains(arr.message_id) then
@@ -1021,6 +1173,8 @@ function inc_action_message(arr)
 				else
 					debuffed_mobs[arr.target_id][arr.param_1] = nil
 				end
+			else
+				debuffed_mobs[arr.target_id][arr.param_1] = nil	
 			end	
 		end
 	end
@@ -1071,6 +1225,8 @@ windower.register_event('unload', function()
     for _, txt in pairs(ui_timers) do
         if txt then txt:destroy() end
     end
+    if text_box then text_box:destroy() end
+	if buff_text_box then buff_text_box:destroy() end
 end)
 
 windower.register_event('addon command', function(...)
@@ -1089,7 +1245,20 @@ windower.register_event('addon command', function(...)
             windower.add_to_chat(207, 'Debuffed: Setup mode OFF.')
             disable_setup_mode()
         end
+		
+    elseif cmd == 'mode' then
+        settings.display_mode = settings.display_mode or 'icon'
         
+        if settings.display_mode == 'icon' then
+            settings.display_mode = 'text'
+            windower.add_to_chat(207, 'Debuffed: Display mode set to TEXT.')
+        else
+            settings.display_mode = 'icon'
+            windower.add_to_chat(207, 'Debuffed: Display mode set to ICON.')
+        end
+        
+        config.save(settings, 'all')
+		
     elseif cmd == 'pos' and is_setup_mode then
         local new_x = tonumber(args[2])
         local new_y = tonumber(args[3])
@@ -1105,5 +1274,38 @@ windower.register_event('addon command', function(...)
         else
             windower.add_to_chat(167, 'Debuffed: Invalid coordinates. Use //debuffed pos x y')
         end
+		
+	elseif cmd == 'align' then
+        local diff_x = math.abs(settings.pos.x - settings.buff_pos.x)
+        local diff_y = math.abs(settings.pos.y - settings.buff_pos.y)
+
+        if diff_x < diff_y then
+            settings.buff_pos.x = settings.pos.x
+            buff_pos_x = settings.pos.x
+            windower.add_to_chat(207, 'Debuffed: Vertically aligned! (Matched Left Edges)')
+            
+        else
+            settings.buff_pos.y = settings.pos.y
+            buff_pos_y = settings.pos.y
+            windower.add_to_chat(207, 'Debuffed: Horizontally aligned! (Matched Top Edges)')
+        end
+        
+        if is_setup_mode and buff_anchor_box then
+            buff_anchor_box:pos(buff_pos_x, buff_pos_y)
+        end
+		
+    elseif cmd == 'buffdir' then
+        -- If it doesn't exist yet, default it to reversed (your preference)
+        settings.buff_direction = settings.buff_direction or 'reverse'
+        
+        if settings.buff_direction == 'reverse' then
+            settings.buff_direction = 'normal'
+            windower.add_to_chat(207, 'Debuffed: Buffs will now draw Left-to-Right (Normal).')
+        else
+            settings.buff_direction = 'reverse'
+            windower.add_to_chat(207, 'Debuffed: Buffs will now draw Right-to-Left (Reverse).')
+        end
+        
+        config.save(settings, 'all')
     end
 end)
